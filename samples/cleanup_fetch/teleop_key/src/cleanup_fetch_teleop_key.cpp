@@ -58,6 +58,9 @@ private:
   std::map<std::string, double> joint_max_map_;
   std::map<std::string, double> joint_min_map_;
 
+  const std::string MSG_1 = "We will clean up any broken bottles";
+  const std::string MSG_2 = "Please guide customers to evacuate";
+
 public:
   CleanupFetchTeleopKey();
 
@@ -75,6 +78,8 @@ public:
   void operateArm(const int joint_number, const double arm_pos, const double duration_sec);
 //  double getDurationRot(const double next_pos, const double current_pos);
   void operateHand(bool grasp);
+  void messageCallback(const std_msgs::String::ConstPtr& message);
+  void sendMessage(const std::string &message);
 
   void showHelp();
   void showHelpJoint(const std::string &joint_name);
@@ -93,6 +98,8 @@ private:
   ros::Publisher  pub_head_trajectory_;
   ros::Publisher  pub_arm_trajectory_;
   ros::Publisher  pub_gripper_trajectory_;
+  ros::Subscriber sub_msg_;
+  ros::Publisher  pub_msg_;
 
   tf::TransformListener listener_;
 };
@@ -334,6 +341,21 @@ void CleanupFetchTeleopKey::operateHand(bool is_hand_open)
 }
 
 
+void CleanupFetchTeleopKey::messageCallback(const std_msgs::String::ConstPtr& message)
+{
+  ROS_INFO("Subscribe message: %s", message->data.c_str());
+}
+
+void CleanupFetchTeleopKey::sendMessage(const std::string &message)
+{
+  ROS_INFO("Send message:%s", message.c_str());
+
+  std_msgs::String string_msg;
+  string_msg.data = message;
+  pub_msg_.publish(string_msg);
+}
+
+
 void CleanupFetchTeleopKey::showHelp()
 {
   puts("Operate by Keyboard");
@@ -358,6 +380,9 @@ void CleanupFetchTeleopKey::showHelp()
   puts("o/l   : Control wrist_flex/wrist_roll ");
   puts("---------------------------");
   puts("g : Grasp/Open Hand");
+  puts("---------------------------");
+  puts(("1 : Send Message: "+MSG_1).c_str());
+  puts(("2 : Send Message: "+MSG_2).c_str());
 }
 
 void CleanupFetchTeleopKey::showHelpJoint(const std::string &joint_name)
@@ -407,6 +432,10 @@ int CleanupFetchTeleopKey::run()
   pub_arm_trajectory_     = node_handle_.advertise<trajectory_msgs::JointTrajectory>("/arm_controller/command", 10);
   pub_gripper_trajectory_ = node_handle_.advertise<trajectory_msgs::JointTrajectory>("/gripper_controller/command", 10);
 
+  sub_msg_                = node_handle_.subscribe<std_msgs::String>                ("/message/to_fetch", 100, &CleanupFetchTeleopKey::messageCallback, this);
+  pub_msg_                = node_handle_.advertise<std_msgs::String>                ("/message/from_fetch", 10);
+
+
   const float linear_coef  = 0.3f;
   const float angular_coef = 0.3f;
 
@@ -428,6 +457,16 @@ int CleanupFetchTeleopKey::run()
           
       switch(c)
       {
+        case KEYCODE_1:
+        {
+          sendMessage(MSG_1);
+          break;
+        }
+        case KEYCODE_2:
+        {
+          sendMessage(MSG_2);
+          break;
+        }
         case KEYCODE_UP:
         {
           ROS_DEBUG("Go Forward");
