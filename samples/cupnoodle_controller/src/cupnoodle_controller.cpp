@@ -12,11 +12,25 @@
 
 class SIGVerseCupNoodleController
 {
+private:
+  static const char KEYCODE_1 = 0x31;
+  static const char KEYCODE_2 = 0x32;
+  static const char KEYCODE_3 = 0x33;
+  static const char KEYCODE_G = 0x67;
+  static const char KEYCODE_H = 0x68;
+  static const char KEYCODE_I = 0x69;
+  static const char KEYCODE_J = 0x6a;
+  static const char KEYCODE_R = 0x72;
+  
 public:
   static void rosSigintHandler(int sig);
   static int  canReceive(int fd);
   
-  void sendPositonCallback(const std::string &name, const double start_time);
+  void sendGraspedMessage(const std::string &name);
+  void sendReleasedMessage();
+  void createTimer(const std::string &name, const float speed);
+  void sendPositon(const std::string &name, const float posx, const float posy);
+  void sendPositonCallback(const std::string &name, const double start_time, const float speed);
 
   void showHelp();
   int run(int argc, char **argv);
@@ -24,6 +38,7 @@ public:
 private:
   ros::NodeHandle node_handle_;
 
+  ros::Publisher  pub_msg_;
   ros::Publisher  pub_transform_;
   
   std::map<std::string, ros::Timer> pub_timer_map_;
@@ -75,12 +90,15 @@ int SIGVerseCupNoodleController::run(int argc, char **argv)
 
   ros::Rate loop_rate(50);
 
+  pub_msg_       = node_handle_.advertise<std_msgs::String>("/goods/message/from_ros", 10);
   pub_transform_ = node_handle_.advertise<geometry_msgs::TransformStamped>("/goods/transform", 10);
   
   showHelp();
-
-  std::string goods_name = "cupnoodle_curry";
-  pub_timer_map_[goods_name] = node_handle_.createTimer(ros::Duration(0.05), boost::bind(&SIGVerseCupNoodleController::sendPositonCallback, this, goods_name, ros::Time::now().toSec()));
+  
+  createTimer("cupnoodle",             0.5);
+  createTimer("cupnoodle_chilitomato", 0.6);
+  createTimer("cupnoodle_curry",       0.7);
+  createTimer("cupnoodle_seafood",     0.8);
 
   while (ros::ok())
   {
@@ -95,13 +113,49 @@ int SIGVerseCupNoodleController::run(int argc, char **argv)
 
       c = buf[ret-1];
           
-//      switch(c)
-//      {
-//        case KEYCODE_C:
-//        {
-//          break;
-//        }
-//      }
+      switch(c)
+      {
+        case KEYCODE_1:
+        {
+          sendPositon("cupnoodle_table", 0.0, 0.0);
+          break;
+        }
+        case KEYCODE_2:
+        {
+          sendPositon("cupnoodle_table", 0.5, 0.0);
+          break;
+        }
+        case KEYCODE_3:
+        {
+          sendPositon("cupnoodle_table", 0.0, 0.5);
+          break;
+        }
+        case KEYCODE_G:
+        {
+          sendGraspedMessage("cupnoodle");
+          break;
+        }
+        case KEYCODE_H:
+        {
+          sendGraspedMessage("cupnoodle_chilitomato");
+          break;
+        }
+        case KEYCODE_I:
+        {
+          sendGraspedMessage("cupnoodle_curry");
+          break;
+        }
+        case KEYCODE_J:
+        {
+          sendGraspedMessage("cupnoodle_seafood");
+          break;
+        }
+        case KEYCODE_R:
+        {
+          sendReleasedMessage();
+          break;
+        }
+      }
     }
 
     ros::spinOnce();
@@ -122,17 +176,73 @@ void SIGVerseCupNoodleController::showHelp()
   puts("---------------------------");
   puts("-- CupNoodle Controller --");
   puts("---------------------------");
+  puts("1 : Move Table to Position1");
+  puts("2 : Move Table to Position2");
+  puts("3 : Move Table to Position3");
+  puts("g : Send Grasped cupnoodle");
+  puts("h : Send Grasped cupnoodle_chilitomato");
+  puts("i : Send Grasped cupnoodle_curry");
+  puts("j : Send Grasped cupnoodle_seafood");
+  puts("r : Send Released");
+  puts("---------------------------");
 }
 
-void SIGVerseCupNoodleController::sendPositonCallback(const std::string &name, const double start_time)
+
+void SIGVerseCupNoodleController::sendGraspedMessage(const std::string &name)
+{
+  std_msgs::String msg;
+  msg.data = "grasped,"+name;
+  ROS_INFO("Sent Message: %s", msg.data.c_str());
+  pub_msg_.publish(msg);
+}
+
+void SIGVerseCupNoodleController::sendReleasedMessage()
+{
+  std_msgs::String msg;
+  msg.data = "released";
+  ROS_INFO("Sent Message: %s", msg.data.c_str());
+  pub_msg_.publish(msg);
+}
+
+void SIGVerseCupNoodleController::createTimer(const std::string &name, const float speed)
+{
+  pub_timer_map_[name]=node_handle_.createTimer(ros::Duration(0.05), boost::bind(&SIGVerseCupNoodleController::sendPositonCallback, this, name, ros::Time::now().toSec(), speed));
+}
+
+
+void SIGVerseCupNoodleController::sendPositon(const std::string &name, const float posx, const float posy)
 {
   geometry_msgs::TransformStamped transformStamped;
   
   transformStamped.header.frame_id = "map";
   transformStamped.child_frame_id = name;   // Please set the name
 
-  float speed = 0.5;
+  // test position
+  geometry_msgs::Vector3 pos;
+  pos.x = posx;
+  pos.y = posy;
+  pos.z = 0.0;
   
+  // test rotation
+  tf::Quaternion tfqua = tf::createQuaternionFromRPY(0, 0, 0);
+  
+  geometry_msgs::Quaternion qua;
+  quaternionTFToMsg(tfqua, qua);
+  
+  transformStamped.transform.translation = pos;
+//  transformStamped.transform.rotation    = qua; // If not set, it will be calculated automatically by SIGVerse.
+  
+  pub_transform_.publish(transformStamped);
+}
+
+
+void SIGVerseCupNoodleController::sendPositonCallback(const std::string &name, const double start_time, const float speed)
+{
+  geometry_msgs::TransformStamped transformStamped;
+  
+  transformStamped.header.frame_id = "map";
+  transformStamped.child_frame_id = name;   // Please set the name
+
   double pos_val = start_time + speed * ros::Time::now().toSec();
   
   // test position
